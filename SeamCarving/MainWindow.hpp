@@ -65,9 +65,12 @@ private:
     /*****************************************/
     
     /* Originalbild */
+    int debug = 0;
     cv::Mat originalImage;
+    cv::Mat pixelBrightness;
+    QVector<bool> markedImage;
     cv::Mat croppedImage;
-    QVector<float> partitalSeams;
+    QVector<int> partitalSeams;
     struct MapSeam {
         float value;
         int column;
@@ -83,9 +86,9 @@ private:
     /* Methoden aktivieren bzw. deaktivieren die UI */
     void enableGUI();
     void disableGUI();
-    float brightness(const cv::Vec3b &bgr);
+    uchar brightness(const cv::Vec3b &bgr);
     int index(const int i, const int j, const int width);
-    float energyFunction(int x, int y);
+    int energyFunction(const int x, const int y);
     float minEnergy(int i, int j);
     bool compareSeam(const MapSeam &m1, const MapSeam &m2);
     QVector<int> backtrackSeam(int j);

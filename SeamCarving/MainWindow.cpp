@@ -1,6 +1,8 @@
 #include "MainWindow.hpp"
 #include <QDebug>
 
+using namespace cv;
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent)
 {
@@ -14,20 +16,20 @@ MainWindow::~MainWindow()
     delete centralWidget;    
     
     /* schliesse alle offenen Fenster */
-    cv::destroyAllWindows();
+    destroyAllWindows();
 }
 
 /* Methode oeffnet ein Bild und zeigt es in einem separaten Fenster an */
 void MainWindow::on_pbOpenImage_clicked()
 {
     /* oeffne Bild mit Hilfe eines Dateidialogs */
-    QString imagePath = QFileDialog::getOpenFileName(this, "Open Image...", QString(), QString("Images *.png *.jpg *.tiff *.tif"));
+    QString imagePath = QFileDialog::getOpenFileName(this, "Open Image...", QString(), QString("Images *.png *.jpg *.tiff *.tif *.jpeg"));
     
     /* wenn ein gueltiger Dateipfad angegeben worden ist... */
     if(!imagePath.isNull() && !imagePath.isEmpty())
     {
         /* ...lese das Bild ein */
-        cv::Mat img = ImageReader::readImage(QtOpencvCore::qstr2str(imagePath));
+        Mat img = ImageReader::readImage(QtOpencvCore::qstr2str(imagePath));
         
         /* wenn das Bild erfolgreich eingelesen worden ist... */
         if(!img.empty())
@@ -39,7 +41,7 @@ void MainWindow::on_pbOpenImage_clicked()
             enableGUI();
             
             /* ... zeige das Originalbild in einem separaten Fenster an */
-            cv::imshow("Original Image", originalImage); 
+            imshow("Original Image", originalImage);
         }
         else
         {
@@ -63,32 +65,63 @@ void MainWindow::on_pbComputeSeams_clicked()
     int rowsToRemove = sbRows->value();
     
     /* .............. */
-    partitalSeams = QVector<float>(originalImage.cols * originalImage.rows);
-    partitalSeams.fill(-1);
-    for (int i = 1; i < originalImage.rows; i++) {
+    pixelBrightness = Mat(originalImage.rows, originalImage.cols, CV_8U);
+    for (int i = 0; i < originalImage.rows; i++) {
         for (int j = 0; j < originalImage.cols; j++) {
-            float m = minEnergy(i, j);
-            //if (i % 1000 == 0) qDebug() << m;
+            Vec3b bgr = originalImage.at<Vec3b>(Point(j, i));
+            pixelBrightness.at<uchar>(Point(j, i)) = brightness(bgr);
         }
     }
 
+    imshow("Brightness", pixelBrightness);
+    partitalSeams = QVector<int>(originalImage.cols * originalImage.rows);
+    partitalSeams.fill(-1);
+    for (int i = 1; i < originalImage.rows; i++) {
+        for (int j = 0; j < originalImage.cols; j++) {
+            minEnergy(i, j);
+            debug++;
+            //qDebug() << debug;
+        }
+    }
+    qDebug() << "Finished calculating Seams";
     QVector<MapSeam> seams = QVector<MapSeam>(0);
     for (int j = 1; j <= originalImage.cols; j++) {
         MapSeam m;
         m.value = partitalSeams.at(originalImage.rows * originalImage.cols - j);
         m.column = originalImage.cols - j;
-        if (partitalSeams.at(originalImage.rows * originalImage.cols - j) == 0) qDebug() << j;
+        //qDebug() << m.column << m.value;
+        //if (partitalSeams.at(originalImage.rows * originalImage.cols - j) == 0) qDebug() << j;
         seams.append(m);
     }
     qSort(seams);
-    for (int i = 0; i < seams.size(); i++) {
-        qDebug() << seams.at(i).value << seams.at(i).column;
+
+    QVector<QVector<int>> seamsToRemove = QVector<QVector<int>>(colsToRemove);
+    for (int i = 0; i < colsToRemove; i++) {
+        seamsToRemove.append(backtrackSeam(seams.at(i).column));
     }
-    QVector<int> seamToRemove = backtrackSeam(seams.at(0).column);
-    for (int i = 0; i < seamToRemove.size(); i++) {
-        qDebug() << seamToRemove.at(i);
+    //QVector<int> seamToRemove = backtrackSeam(seams.at(0).column);
+    markedImage = QVector<bool>(originalImage.rows * originalImage.cols);
+    markedImage.fill(false);
+    for (int i = 0; i < seamsToRemove.size(); i++) {
+        for(int j = 0; j < seamsToRemove.at(i).size(); j++) {
+            markedImage.replace(index(originalImage.rows - j - 1, seamsToRemove.at(i).at(j), originalImage.cols), true);
+        }
     }
-    /*croppedImage = cv::Mat(originalImage.rows, originalImage.cols - colsToRemove, cv::Vec3b.type);
+    croppedImage = Mat(originalImage.rows, originalImage.cols - colsToRemove, originalImage.type());
+    int colsRemoved = 0;
+    for (int i = 0; i < originalImage.rows; i++) {
+        for (int j = 0; j < originalImage.cols; j++) {
+            if (markedImage.at(index(i, j, originalImage.cols))) {
+                colsRemoved++;
+                continue;
+            } else {
+                if (colsRemoved > 0) qDebug() << "worked";
+                croppedImage.at<Vec3b>(i, j - colsRemoved) = originalImage.at<Vec3b>(i, j);
+            }
+        }
+        colsRemoved = 0;
+    }
+    /*croppedImage = Mat(originalImage.rows, originalImage.cols - colsToRemove, Vec3b.type);
     for (int i = 0; i < columnsToRemove; i++) {
         originalImage.row(0).
     }*/
@@ -98,7 +131,7 @@ void MainWindow::on_pbComputeSeams_clicked()
 void MainWindow::on_pbRemoveSeams_clicked()
 {
     /* .............. */
-    cv::imshow("Cropped Image", croppedImage);
+    imshow("Cropped Image", croppedImage);
 }
 
 void MainWindow::setupUi()
@@ -205,16 +238,17 @@ void MainWindow::disableGUI()
     pbRemoveSeams->setEnabled(false);
 }
 
-float MainWindow::energyFunction(int x, int y) {
-    float value = brightness(originalImage.at<cv::Vec3b>(y,x));
-    float colBefore = y > 0 ? brightness(originalImage.at<cv::Vec3b>(y - 1,x)) : 0;
-    float rowBefore = x > 0 ? brightness(originalImage.at<cv::Vec3b>(y,x - 1)) : 0;
-    return qAbs(value - colBefore) + qAbs(value - rowBefore);
+int MainWindow::energyFunction(const int x, const int y) {
+    uchar b = pixelBrightness.at<uchar>(Point(y, x));
+    uchar colBefore = y == 0 ? pixelBrightness.at<uchar>(Point(y - 1, x)) : pixelBrightness.at<uchar>(Point(y + 1, x));
+    uchar rowBefore = pixelBrightness.at<uchar>(Point(y, x - 1));
+    //qDebug() << qAbs(b - colBefore) + qAbs(b - rowBefore);
+    return qAbs(b - colBefore) + qAbs(b - rowBefore);
 }
 
-float MainWindow::brightness(const cv::Vec3b& bgr)
+uchar MainWindow::brightness(const Vec3b& bgr)
 {
-    return qSqrt(0.299*qPow(bgr[2],2) + 0.587*qPow(bgr[1],2) + 0.114*qPow(bgr[0],2));
+    return 0.299*bgr[2] + 0.587*bgr[1] + 0.114*bgr[0];
 }
 
 int MainWindow::index(const int i, const int j, const int width) {
@@ -225,28 +259,28 @@ float MainWindow::minEnergy(int i, int j) {
     if (i == 0 || j > originalImage.cols || j < 0) {
         return 0;
     }
-    float value = partitalSeams.at(index(i, j, originalImage.cols));
+    int value = partitalSeams.at(index(i, j, originalImage.cols));
     if (value != -1) {
         //qDebug() << "found value: " << value;
         return value;
     }
-    float m = energyFunction(i, j) + qMin(minEnergy(i-1, j-1),qMin(minEnergy(i-1, j), minEnergy(i-1, j+1)));
+    int m = energyFunction(i, j) + qMin(minEnergy(i-1, j-1), qMin(minEnergy(i-1, j), minEnergy(i-1, j+1)));
     //qDebug() << "partital Seam for (" << i << ", " << j << ") : " << m;
     //qDebug() << "energyFunction: " << energyFunction(i, j);
-    partitalSeams.insert(index(i, j, originalImage.cols), m);
+    partitalSeams.replace(index(i, j, originalImage.cols), m);
     return m;
 }
 
 QVector<int> MainWindow::backtrackSeam(int j) {
     QVector<int> seam = QVector<int>();
     for (int i = originalImage.rows - 1; i >= 0; i--) {
-        float left = partitalSeams.at(index(i, j - 1, originalImage.cols));
+        float left = j > 0 ? partitalSeams.at(index(i, j - 1, originalImage.cols)) : INFINITY;
         float mid = partitalSeams.at(index(i, j, originalImage.cols));
-        float right = partitalSeams.at(index(i, j + 1, originalImage.cols));
+        float right = j < originalImage.cols ? partitalSeams.at(index(i, j + 1, originalImage.cols)) : INFINITY;
         float min = qMin(left, qMin(mid, right));
         if (min == left) seam.append(--j);
         else if (min == mid) seam.append(j);
-        else if (min = right) seam.append(j++);
+        else if (min == right) seam.append(j++);
     }
     return seam;
 }
