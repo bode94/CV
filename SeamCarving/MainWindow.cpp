@@ -1,5 +1,6 @@
 #include "MainWindow.hpp"
 #include <QDebug>
+#include <QMatrix3x3>
 
 using namespace cv;
 
@@ -174,6 +175,46 @@ void MainWindow::on_pbComputeSeams_clicked()
             pixelBrightness.at<uchar>(Point(j, i)) = brightness(bgr);
         }
     }
+    //1,0,-1,2,0,-2,1,0,-1
+    //
+    float xvalues[] = {
+        1, 0, -1,
+        2, 0, -2,
+        1, 0, -1
+    };
+    float yvalues[] = {
+        1, 2, 1,
+        0, 0, 0,
+        -1, -2, -1
+    };
+    QMatrix3x3 sx = QMatrix3x3(xvalues);
+    QMatrix3x3 sy = QMatrix3x3(yvalues);
+
+    Mat sobelImage = pixelBrightness.clone();
+    for (int i = 1; i < pixelBrightness.rows - 1; i++) {
+        for (int j = 1; j < originalImage.cols - 1; j++) {
+            float values[] = {
+                (float) pixelBrightness.at<uchar>(Point(j-1, i-1)), (float)pixelBrightness.at<uchar>(Point(j, i-1)), (float)pixelBrightness.at<uchar>(Point(j+1, i-1)),
+                (float)pixelBrightness.at<uchar>(Point(j-1, i)), (float)pixelBrightness.at<uchar>(Point(j, i)), (float)pixelBrightness.at<uchar>(Point(j+1, i)),
+                (float)pixelBrightness.at<uchar>(Point(j-1, i+1)), (float)pixelBrightness.at<uchar>(Point(j, i+1)), (float)pixelBrightness.at<uchar>(Point(j+1, i+1))
+            };
+            QMatrix3x3 value = QMatrix3x3(values);
+            QMatrix3x3 xvalue = sx * value;
+            QMatrix3x3 yvalue = sy * value;
+            int xsum = 0;
+            int ysum = 0;
+            for (int x = 0; x < 3; x++) {
+                for (int y = 0; y < 3; y++) {
+                    xsum+=xvalue(x,y);
+                    ysum+=yvalue(x,y);
+                }
+            }
+            uchar sobel = (uchar) qSqrt(qPow(xsum, 2) + qPow(ysum, 2));
+            //qDebug()<<sobel;
+            sobelImage.at<uchar>(Point(j, i)) = sobel;
+        }
+    }
+    imshow("sobel", sobelImage);
     
     if (colsToRemove > 0) removeVerticalSeam();
     if (rowsToRemove > 0) removeHorizontalSeam();
