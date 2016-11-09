@@ -158,8 +158,6 @@ void MainWindow::on_pbOpenImage_clicked()
 
 void MainWindow::on_pbComputeSeams_clicked()
 {
-    if (debug == 0) seamImage = originalImage.clone();
-    debug++;
     if (sbCols->value() == 0 && sbRows->value() == 0) return;
     /* Anzahl der Spalten, die entfernt werden sollen */
     int colsToRemove = sbCols->value();
@@ -215,13 +213,13 @@ void MainWindow::on_pbComputeSeams_clicked()
         }
     }
     imshow("sobel", sobelImage);
+    pixelBrightness = sobelImage.clone();
     
     if (colsToRemove > 0) removeVerticalSeam();
     if (rowsToRemove > 0) removeHorizontalSeam();
 
     sbCols->setValue(colsToRemove - 1);
     sbRows->setValue(rowsToRemove - 1);
-    imshow("Seam", seamImage);
     on_pbComputeSeams_clicked();
 }
 
@@ -248,7 +246,6 @@ void MainWindow::removeVerticalSeam() {
     vMarkedImage.fill(false);
     for (int i = 0; i < vSeamToRemove.size(); i++) {
         vMarkedImage.replace(index(originalImage.rows - i - 1, vSeamToRemove[i], originalImage.cols), true);
-        seamImage.at<Vec3b>(originalImage.rows - i - 1, vSeamToRemove[i]) = Vec3b(0,0,255);
     }
 
     croppedImage = Mat(originalImage.rows, originalImage.cols - 1, originalImage.type());
@@ -289,7 +286,6 @@ void MainWindow::removeHorizontalSeam() {
     hMarkedImage.fill(false);
     for (int i = 0; i < hSeamToRemove.size(); i++) {
         hMarkedImage.replace(index(hSeamToRemove[i], originalImage.cols - i - 1, originalImage.cols), true);
-        seamImage.at<Vec3b>(hSeamToRemove[i], originalImage.cols - i - 1) = Vec3b(0,0,255);
     }
     //qDebug() << hMarkedImage;
     croppedImage = Mat(originalImage.rows - 1, originalImage.cols, originalImage.type());
